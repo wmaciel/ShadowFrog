@@ -1,5 +1,7 @@
 # ShadowFrog
 
+> this is a test change!
+
 ShadowFrog gives coding agents a **shadow knowledge base** for any codebase:
 a file-backed memory of tacit codebase knowledge learned from code reading,
 experiments, and conversations with you.
