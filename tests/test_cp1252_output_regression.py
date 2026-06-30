@@ -1,18 +1,19 @@
-"""Regression: the CLI helpers must stay UTF-8-safe under a narrow (cp1252)
-codec, not only on a UTF-8 platform.
+"""The CLI helpers must stay UTF-8-safe under a narrow (cp1252) codec, not only
+on a UTF-8 platform.
 
-Linux/macOS default to UTF-8, so the Windows ``cp1252`` failure is invisible
-in the normal Linux CI. These tests force the narrow-codec failure mode on
-*any* OS:
+Linux/macOS default to UTF-8, so a missing explicit encoding only fails where
+the platform default codec is narrow (e.g. Windows ``cp1252``). These tests
+force that narrow-codec failure mode on *any* OS:
 
-  * ``PYTHONIOENCODING=cp1252`` pins a Windows-style narrow stdout codec
-    (covers the stdout ``reconfigure`` fix).
-  * ``LC_ALL=C`` + ``PYTHONUTF8=0`` makes the default *file* encoding narrow on
-    POSIX too (covers the ``open(..., encoding="utf-8")`` fix); on Windows the
-    ANSI code page already makes it ``cp1252``.
+  * ``PYTHONIOENCODING=cp1252`` pins a narrow stdout/stderr codec, exercising
+    the streams' ``reconfigure(encoding="utf-8")`` path.
+  * ``LC_ALL=C`` + ``PYTHONUTF8=0`` makes the default *file* codec narrow on
+    POSIX too, exercising the explicit ``encoding="utf-8"`` on file and
+    subprocess I/O; on Windows the ANSI code page already makes it ``cp1252``.
 
-Without the Phase-1 fixes each helper raises ``UnicodeEncodeError`` /
-``UnicodeDecodeError`` and exits non-zero; with them, both pass everywhere.
+A helper that emits non-ASCII without pinning UTF-8 raises
+``UnicodeEncodeError`` / ``UnicodeDecodeError`` here and exits non-zero; with
+UTF-8 pinned, both pass on every platform.
 """
 import os
 import subprocess
