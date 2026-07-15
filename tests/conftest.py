@@ -9,6 +9,7 @@ at least one integration test, since the importable view of a script
 bypasses the argument parser.
 """
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -129,3 +130,19 @@ def _git_init(path, commit_all):
         subprocess.run(["git", "add", "-A"], cwd=path, check=True, env=env)
         subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "test initial"],
                        cwd=path, check=True, env=env)
+
+
+def pytest_collection_modifyitems(config, items):
+    """On Windows, skip tests that shell out to bash (`requires_bash`).
+
+    The bash-backed skills scripts are ported to Python in later phases; until
+    then their tests need a POSIX shell. Linux CI still runs them in full.
+    """
+    if os.name != "nt":
+        return
+    skip_bash = pytest.mark.skip(
+        reason="requires bash; skipped on Windows until the script is ported to Python"
+    )
+    for item in items:
+        if "requires_bash" in item.keywords:
+            item.add_marker(skip_bash)

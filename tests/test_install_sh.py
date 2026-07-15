@@ -10,6 +10,9 @@ from pathlib import Path
 import json
 import pytest
 
+# Bash-backed suite: skipped on Windows by the requires_bash hook (tests/conftest.py).
+pytestmark = pytest.mark.requires_bash
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INSTALL_SCRIPT = REPO_ROOT / "install.sh"
 

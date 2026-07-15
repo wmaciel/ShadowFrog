@@ -41,6 +41,9 @@ from pathlib import Path
 
 import pytest
 
+# Bash-backed suite: skipped on Windows by the requires_bash hook (tests/conftest.py).
+pytestmark = pytest.mark.requires_bash
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 PRE_TOOL_HOOK = REPO_ROOT / "hook-templates" / "scripts" / "shadow-frog-pre-tool.sh"
 CHECK_INIT_HOOK = REPO_ROOT / "hook-templates" / "scripts" / "shadow-frog-check-init.sh"
