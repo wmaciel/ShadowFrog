@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "obsi": {
+      "type": "stdio",
+      "command": "npm",
+      "args": [
+        "exec",
+        "-y",
+        "--registry=https://pkgs.dev.azure.com/1es-mcp/1es-mcp/_packaging/1es-mcp-registry/npm/registry/",
+        "--prefix=~/",
+        "--",
+        "@teams-eng-mcp/launcher@latest",
+        "obsi"
+      ],
+      "env": {
+        "OBSI_VAULTS": "MSFT@C:\\Users\\wmaciel\\OneDrive - Microsoft\\ObsidianVault\\MSFT"
+      }
+    }
+  }
+}
