@@ -79,6 +79,11 @@ def worktree_cleanup(repo_root):
 
 
 @pytest.fixture
+def dream_gc(repo_root):
+    return _load_script(repo_root / "skills/shadow-frog-dream/dream-gc.py")
+
+
+@pytest.fixture
 def lifecycle_env(tmp_path):
     env = os.environ.copy()
     for key in (
