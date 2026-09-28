@@ -68,6 +68,55 @@ def dream_tools(repo_root):
     return _load_script(repo_root / "skills/shadow-frog-dream/dream-tools.py")
 
 
+@pytest.fixture
+def dream_cleanup(repo_root):
+    return _load_script(repo_root / "skills/shadow-frog-dream/dream-cleanup.py")
+
+
+@pytest.fixture
+def worktree_cleanup(repo_root):
+    return _load_script(repo_root / "skills/shadow-frog-dream/_worktree_cleanup.py")
+
+
+@pytest.fixture
+def lifecycle_env(tmp_path):
+    env = os.environ.copy()
+    for key in (
+        "DREAM_NAMESPACE", "DREAM_WORKTREE_BASE", "DREAM_GC_AUTO",
+        "DREAM_GC_INTERVAL_MIN", "DREAM_GC_AGE_MIN", "REPO_ROOT",
+        "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+    ):
+        env.pop(key, None)
+    env.update(
+        HOME=str(tmp_path), GIT_CONFIG_GLOBAL=os.devnull,
+        GIT_CONFIG_SYSTEM=os.devnull,
+    )
+    return env
+
+
+@pytest.fixture
+def lifecycle_git(lifecycle_env):
+    def run(repo, *args):
+        return subprocess.run(
+            ["git", "-C", str(repo), *map(str, args)],
+            env=lifecycle_env, check=True, capture_output=True, timeout=30,
+        ).stdout
+    return run
+
+
+@pytest.fixture
+def lifecycle_repo(tmp_path, lifecycle_git):
+    repo = tmp_path / "source repo caf\u00e9"
+    lifecycle_git(tmp_path, "init", "-q", "-b", "main", repo)
+    lifecycle_git(repo, "config", "user.email", "test@shadowfrog.invalid")
+    lifecycle_git(repo, "config", "user.name", "Test")
+    lifecycle_git(repo, "config", "commit.gpgsign", "false")
+    (repo / "file.txt").write_text("initial\n", encoding="utf-8")
+    lifecycle_git(repo, "add", "-A")
+    lifecycle_git(repo, "commit", "-q", "-m", "initial")
+    return repo
+
+
 @pytest.fixture(scope="session")
 def dream_coverage(repo_root):
     return _load_script(repo_root / "skills/shadow-frog-dream/dream-coverage.py")
