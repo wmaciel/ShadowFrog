@@ -34,6 +34,7 @@ def run_cleanup(root, lifecycle_env):
     def run(*args, extras=None, script=CLEANUP):
         return subprocess.run(
             [sys.executable, str(script), *map(str, args)],
+            cwd=root.parent,
             env={**lifecycle_env, "DREAM_WORKTREE_BASE": str(root), **(extras or {})},
             capture_output=True, text=True, encoding="utf-8", timeout=30,
         )
@@ -122,6 +123,7 @@ def test_registered_removal(
 @pytest.mark.parametrize("condition", ["locked", "wrong-repo", "missing-metadata"])
 def test_registered_failures_preserve_data(
     run_cleanup, root, lifecycle_repo, lifecycle_git, tmp_path, condition,
+    seed_protected_files, preservation_snapshot,
 ):
     target = root / "ns" / "dream-test"
     lifecycle_git(lifecycle_repo, "worktree", "add", "-q", target, "-b", "test")
@@ -134,10 +136,13 @@ def test_registered_failures_preserve_data(
     else:
         (target / ".git").unlink()
         lifecycle_git(selected, "worktree", "lock", target)
+    seed_protected_files(target)
+    before = preservation_snapshot(target, repos=(lifecycle_repo, selected))
+    assert str(target) in before["git"][str(lifecycle_repo)]["registrations"]
     result = run_cleanup(target, "--repo-root", selected, "--quiet")
     assert result.returncode == 1
     assert result.stderr and not result.stdout
-    assert target.is_dir()
+    assert preservation_snapshot(target, repos=(lifecycle_repo, selected)) == before
 
 
 def test_flag_beats_env_and_inherited_git_context(
@@ -159,18 +164,26 @@ def test_flag_beats_env_and_inherited_git_context(
 
 
 @pytest.mark.parametrize("bad", ["outside", "base", "shape", "traversal", "relative"])
-def test_unsafe_target(run_cleanup, root, tmp_path, bad):
+def test_unsafe_target(
+    run_cleanup, root, tmp_path, bad, seed_protected_files, preservation_snapshot,
+):
     candidates = {
         "outside": str(tmp_path / "outside" / "ns" / "dream-no"),
         "base": str(root),
         "shape": str(root / "ns" / "ordinary"),
         "traversal": os.path.join(str(root), "ns", "..", "ns", "dream-no"),
-        "relative": os.path.join("ns", "dream-no"),
+        "relative": os.path.join(root.name, "ns", "dream-no"),
     }
+    protected = Path(candidates[bad])
+    if not protected.is_absolute():
+        protected = root.parent / protected
+    protected.mkdir(parents=True, exist_ok=True)
+    seed_protected_files(protected)
+    before = preservation_snapshot(tmp_path)
     result = run_cleanup(candidates[bad])
     assert result.returncode == 1
     assert result.stderr
-    assert root.is_dir()
+    assert preservation_snapshot(tmp_path) == before
 
 
 @pytest.mark.parametrize("base", ["relative", "traversal", "sensitive"])
@@ -205,12 +218,16 @@ def test_missing_adjacent_helper(run_cleanup, orphan, tmp_path, missing, expecte
     b"gitdir: bad\0path\n", b"gitdir: bad\xffpath\n",
     b"gitdir: missing\nsecond-line\n",
 ])
-def test_malformed_metadata_is_not_orphan(run_cleanup, orphan, raw):
+def test_malformed_metadata_is_not_orphan(
+    run_cleanup, orphan, raw, seed_protected_files, preservation_snapshot,
+):
     (orphan / ".git").write_bytes(raw)
+    seed_protected_files(orphan)
+    before = preservation_snapshot(orphan)
     result = run_cleanup(orphan, "--quiet")
     assert result.returncode == 1, result.stderr
     assert result.stderr and not result.stdout
-    assert orphan.is_dir()
+    assert preservation_snapshot(orphan) == before
 
 
 @pytest.mark.parametrize("name,ending", [

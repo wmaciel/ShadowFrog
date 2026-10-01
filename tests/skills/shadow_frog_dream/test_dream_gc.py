@@ -117,6 +117,7 @@ def test_sensitive_base_is_refused_before_missing_check(run_gc, root):
 @pytest.mark.parametrize("mode", ["default", "task", "dry-run", "locked", "wrong-repo"])
 def test_real_registered_worktree(
     run_gc, root, lifecycle_repo, lifecycle_git, tmp_path, mode,
+    seed_protected_files, preservation_snapshot,
 ):
     target = root / "ns" / "dream-real"
     lifecycle_git(lifecycle_repo, "worktree", "add", "-q", target, "-b", "real")
@@ -132,10 +133,14 @@ def test_real_registered_worktree(
     if mode == "wrong-repo":
         selected = tmp_path / "other"
         lifecycle_git(tmp_path, "init", "-q", selected)
+    seed_protected_files(target)
+    before = preservation_snapshot(target, repos=(lifecycle_repo, selected))
+    assert str(target) in before["git"][str(lifecycle_repo)]["registrations"]
     result = run_gc(*args, "--repo-root", selected)
     assert result.returncode == 0, result.stderr
     assert target.exists() == (mode != "task")
-    assert lifecycle_git(lifecycle_repo, "show-ref", "--verify", "refs/heads/real")
+    if mode != "task":
+        assert preservation_snapshot(target, repos=(lifecycle_repo, selected)) == before
     if mode == "default":
         assert "kept=1" in result.stdout
     elif mode in ("locked", "wrong-repo"):
@@ -143,6 +148,9 @@ def test_real_registered_worktree(
     else:
         assert "removed=1" in result.stdout and "stale-registered" in result.stdout
     if mode == "task":
+        assert lifecycle_git(
+            lifecycle_repo, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads",
+        ) == before["git"][str(lifecycle_repo)]["branches"]
         data = lifecycle_git(lifecycle_repo, "worktree", "list", "--porcelain", "-z")
         paths = [Path(part[9:].decode("utf-8")).resolve() for part in data.split(b"\0")
                  if part.startswith(b"worktree ")]
@@ -150,10 +158,21 @@ def test_real_registered_worktree(
 
 
 @pytest.mark.parametrize("source", ["flag", "environment"])
-def test_task_complete_never_crosses_namespaces(run_gc, orphan, source):
+def test_task_complete_never_crosses_namespaces(
+    run_gc, orphan, root, source, lifecycle_repo, lifecycle_git,
+    seed_protected_files, preservation_snapshot,
+):
     target = orphan("ns")
     sibling = orphan("other")
-    args = ["--task-complete", "--min-age-min", "0"]
+    owned = root / "ns" / "dream-owned"
+    protected = root / "other" / "dream-live"
+    lifecycle_git(lifecycle_repo, "worktree", "add", "-q", owned, "-b", "selected")
+    lifecycle_git(lifecycle_repo, "worktree", "add", "-q", protected, "-b", "protected")
+    seed_protected_files(sibling)
+    seed_protected_files(protected)
+    before = preservation_snapshot(sibling.parent, repos=(lifecycle_repo,))
+    assert str(protected) in before["git"][str(lifecycle_repo)]["registrations"]
+    args = ["--task-complete", "--min-age-min", "0", "--repo-root", lifecycle_repo]
     extras = {}
     if source == "flag":
         args += ["--namespace", "ns"]
@@ -162,13 +181,38 @@ def test_task_complete_never_crosses_namespaces(run_gc, orphan, source):
     result = run_gc(*args, extras=extras)
     assert result.returncode == 0, result.stderr
     assert not target.exists()
-    assert sibling.exists()
-    assert "removed=1" in result.stdout
+    assert not owned.exists()
+    assert preservation_snapshot(sibling.parent, repos=(lifecycle_repo,)) == before
+    assert "removed=2" in result.stdout
 
 
 def test_task_namespace_not_derived_from_repo(run_gc, lifecycle_repo):
     result = run_gc("--task-complete", "--repo-root", lifecycle_repo)
     assert result.returncode == 2
+
+
+@pytest.mark.parametrize("task_complete", [False, True])
+def test_cli_dry_run_preserves_files_and_git_state(
+    run_gc, orphan, root, lifecycle_repo, lifecycle_git, task_complete,
+    seed_protected_files, preservation_snapshot,
+):
+    abandoned = orphan()
+    live = root / "ns" / "dream-live"
+    missing = root / "ns" / "dream-missing"
+    lifecycle_git(lifecycle_repo, "worktree", "add", "-q", live, "-b", "live")
+    lifecycle_git(lifecycle_repo, "worktree", "add", "-q", missing, "-b", "missing")
+    shutil.rmtree(missing)
+    seed_protected_files(abandoned)
+    seed_protected_files(live)
+    before = preservation_snapshot(root, repos=(lifecycle_repo,))
+    assert set(before["git"][str(lifecycle_repo)]["registrations"]) == {str(live), str(missing)}
+    args = ["--dry-run", "--min-age-min", "0", "--repo-root", lifecycle_repo]
+    if task_complete:
+        args += ["--task-complete", "--namespace", "ns"]
+    result = run_gc(*args)
+    assert result.returncode == 0, result.stderr
+    assert "WOULD REMOVE" in result.stdout
+    assert preservation_snapshot(root, repos=(lifecycle_repo,)) == before
 
 
 def test_dry_run_never_removes_or_prunes(dream_gc, worktree_cleanup, root, orphan, monkeypatch, capsys):
@@ -205,13 +249,17 @@ def test_non_dream_and_fresh_entries_not_counted(run_gc, orphan):
     assert fresh.exists() and other.exists()
 
 
-def test_malformed_metadata_refused_even_when_quiet(run_gc, orphan):
+def test_malformed_metadata_refused_even_when_quiet(
+    run_gc, orphan, seed_protected_files, preservation_snapshot,
+):
     target = orphan()
     (target / ".git").write_bytes(b"invalid")
+    seed_protected_files(target)
+    before = preservation_snapshot(target)
     result = run_gc("--quiet", "--min-age-min", "0")
     assert result.returncode == 0
     assert not result.stdout and result.stderr
-    assert target.exists()
+    assert preservation_snapshot(target) == before
 
 
 @pytest.mark.parametrize("missing,code", [
